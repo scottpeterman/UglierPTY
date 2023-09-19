@@ -1,0 +1,13 @@
+README.md
+setup.py
+uglierpty/UglierPTY.py
+uglierpty/__init__.py
+uglierpty.egg-info/PKG-INFO
+uglierpty.egg-info/SOURCES.txt
+uglierpty.egg-info/dependency_links.txt
+uglierpty.egg-info/entry_points.txt
+uglierpty.egg-info/requires.txt
+uglierpty.egg-info/top_level.txt
+uglierpty/terminal/__init__.py
+uglierpty/terminal/backend.py
+uglierpty/terminal/widget.py

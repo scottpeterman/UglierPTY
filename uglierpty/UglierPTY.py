@@ -3,7 +3,7 @@ import traceback
 from PyQt6.QtWidgets import QApplication, QDialog, QFormLayout, QLineEdit, QPushButton
 
 # Importing SSHTerminal from your custom module
-from terminal.widget import SSHTerminal
+from uglierpty.terminal.widget import SSHTerminal
 
 # Function to show a dialog for collecting credentials
 def get_credentials():

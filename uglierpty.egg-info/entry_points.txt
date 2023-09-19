@@ -1,0 +1,2 @@
+[console_scripts]
+uglierpty = uglierpty.UglierPTY:main

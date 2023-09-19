@@ -1,11 +1,11 @@
 from PyQt6.QtCore import QTimer, QRect, Qt, QEvent
 from PyQt6.QtWidgets import QApplication, QWidget, QScrollBar, QHBoxLayout, \
     QSizePolicy, QMenu, QVBoxLayout, QLabel
-from PyQt6.QtGui import QPainter, QAction, QFont, QBrush, QColor, QPen, QContextMenuEvent, QFontMetrics, QPixmap
+from PyQt6.QtGui import QPainter, QAction, QFont, QBrush, QColor, QPen, QFontMetrics, QPixmap
 import sys
 import traceback
 # Import the SSHLib or replace it with your own terminal backend
-from terminal.backend import SSHLib
+from uglierpty.terminal.backend import SSHLib
 
 # Define keymap and align constants as in your original code
 keymap = {
