@@ -4,9 +4,18 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-pyqt6 = "*"
-paramiko = "*"
-pyte = "*"
+pyqt6 = "==6.5.2"
+paramiko = "==3.3.1"
+pyte = "==0.8.1"
+bcrypt = "==4.0.1"
+cffi = "==1.15.1"
+cryptography = "==41.0.4"
+pycparser = "==2.21"
+pynacl = "==1.5.0"
+pyqt6-qt6 = "==6.5.2"
+pyqt6-sip = "==13.5.2"
+wcwidth = "==0.2.6"
+pyyaml = "*"
 
 [dev-packages]
 

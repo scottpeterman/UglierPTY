@@ -2,23 +2,44 @@
 
 ## Overview
 
-UglierPTY is a proof-of-concept (POC) application created to explore the possibility of constructing a fully functional SSH Terminal Widget using PyQt6. This POC is inspired by its sister project, UglyPTY, a full-featured SSH client that utilizes xterm.js. The aim is to offer a similar, if not superior, feature set without relying on browser technologies or JavaScript, resulting in a more streamlined and resource-efficient solution.
+UglierPTY is a very functional proof-of-concept (POC) application created to construct a fully functional SSH Terminal Widget using PyQt6. This POC is inspired by its sister project, UglyPTY, a full-featured SSH client that utilizes xterm.js. The aim is to offer a similar, if not superior, feature set without relying on browser technologies or JavaScript, resulting in a more streamlined and resource-efficient solution.
+
+This is a work in progress, but feel free to give it a try!
+REPO: https://github.com/scottpeterman/UglierPTY
+
+#### A Note About UglyPTY
+
+If your interested in the PyQt6/XTerm.js version of this application take a look here: https://github.com/scottpeterman/UglyPTY
 
 ## Features
 
 - Fully functional SSH terminal built with PyQt6
-- Communication class to manage SSH communication in real-time
-- Resizable terminal window
+- Credentials manager for easy login
+- Portable session files in YAML (Compatible with UglyPTY)
 - Terminal history and screen ratio control via pyte
+- Terminal screen render via QPaint
 - Modular design for easy embedding into other PyQt6 projects
-- Free of Web technology (no xterm.js)
+- Pure Python - Free of Web technology (no xterm.js)
 
-## Prerequisites
+## Architecture
+
 
 - Python 3.x
 - PyQt6
 - Paramiko
 - pyte
+- SQLAlchemy
+- PyYaml
+
+## Screenshots
+
+Here are some snapshots of UglyPTY in action:
+
+<div align="center">
+  <img src="https://github.com/scottpeterman/UglierPTY/raw/main/screen_shots/htop.png" alt="screen" width="400px">
+  <hr><img src="https://github.com/scottpeterman/UglierPTY/raw/main/screen_shots/login.png" alt="screen" width="400px">
+  <hr><img src="https://github.com/scottpeterman/UglierPTY/raw/main/screen_shots/creds.png" alt="screen" width="400px">
+</div>
 
 ## Installation
 
@@ -44,124 +65,60 @@ UglierPTY is a proof-of-concept (POC) application created to explore the possibi
 
 The primary entry point for this POC is the `uglierpty.py` script. To launch the application:
 
+If you cloned the repo
 ```bash
-python uglierpty.py
+python run_test.py
 ```
 
-Upon execution, you'll be presented with a dialog box asking for SSH credentials (host, username, and password). After successful authentication, the SSH Terminal interface will appear.
+If you installed via PIP
+```bash
+python -m uglierpty
+or 
+pythonw -m uglierpty
+```
 
-## Packet Flow
-
-1. **Keyboard Input**: The user interacts with the PyQt6 terminal widget by providing keyboard input.
-   
-2. **Terminal Frontend**: The input is captured by the PyQt6 terminal frontend and passed to the Listener object.
-
-3. **SSHLib and Communication**: The `SSHLib` class serves as the backend for SSH communication, managed by a Communication object running on a separate thread. The Communication class uses the Paramiko library to handle SSH communication with the host.
-
-4. **Host Interaction**: Communication class sends the user input to the remote SSH host.
-
-5. **Data Retrieval**: Communication class listens for incoming data from the remote host using `select.select()` and updates the terminal screen with the received data.
-
-6. **Display**: The PyQt6 terminal widget displays the data, effectively showing the SSH session output.
-
-Absolutely. Let's dive deeper into the mechanics of screen rendering and cursor handling, focusing on the calculations and data structures involved.
 
 ---
+# SSH Terminal Flow
 
-### Screen Management - Detailed Explanation
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SSH Terminal Flow</title>
+</head>
+<body>
 
-#### Screen Rendering
+<h1>SSH Terminal Flow</h1>
 
-##### Data Structure: The Buffer Grid
-- A 2D array of cells, where each cell contains:
-  - `char`: The character to display.
-  - `fg_color`: Foreground color.
-  - `bg_color`: Background color.
-  - `attributes`: Additional attributes like bold, underline, etc.
+<pre>
++--------------------+       +-------------------+       +-------------------+       +------------+       +------------------+
+| SSHTerminalWidget  |       |    SSHLib Class   |       |  Communication    |       |    pyte    |       | Remote SSH Host  |
+|                    |       |                   |       |                   |       |            |       |                  |
+|  keyPressEvent()   |------>|     write(data)   |------>|   sendDataToSSH() |------>|            |------>|   Shell Process  |
+|                    |       |                   |       |                   |       |            |       |                  |
++--------------------+       +-------------------+       +-------------------+       +------------+       +------------------+
+                ^                                       ^                          ^                           ^                     
+                |                                       |                          |                           |                             
+                |                                       |                          |                           |
+                |                                       |                          |                           |
+                |                                       |                          |                           |      
++--------------------+       +-------------------+       +-------------------+       +------------+       +------------------+
+| SSHTerminalWidget  |       |    SSHLib Class   |       |  Communication    |       |    pyte    |       | Remote SSH Host  |
+|                    |       |                   |       |                   |       |            |       |                  |
+|    paintEvent()    |&lt;------|      read()       |&lt;------|  receiveDataFromSSH() |&lt;------|   feed()   |&lt;------|   Shell Process  |
+|                    |       |                   |       |                   |       | stream.attach(screen) |       |                  |
++--------------------+       +-------------------+       +-------------------+       +------------+       +------------------+
+</pre>
 
-```python
-buffer_grid = [
-    [{"char": "H", "fg_color": "#FFFFFF", "bg_color": "#000000", "attributes": None},
-     {"char": "e", "fg_color": "#FFFFFF", "bg_color": "#000000", "attributes": None},
-     ...],
-    [...],
-    ...
-]
-```
+<h2>Step-by-Step Explanation:</h2>
 
-##### PaintEvent: The Rendering Engine
-- Qt's `paintEvent(QPaintEvent *event)` is overridden.
-- A `QPainter` object is used for all graphical rendering.
+<ol>
+  <li><strong>Keystroke in SSHTerminalWidget:</strong> The <code>keyPressEvent()</code> function captures the keystroke and sends it to the <code>SSHLib</code> class via <code>write(data)</code>.</li>
+  <li><strong>Sending to SSH Channel:</strong> The <code>write()</code> method sends the data through an SSH channel, probably utilizing <code>paramiko.SSHClient</code>. This is done in <code>Communication.sendDataToSSH()</code>.</li>
+  <li><strong>SSH to Remote Host:</strong> The keystroke reaches the shell process running on the remote SSH host.</li>
+  <li><strong>Remote Host to pyte:</strong> Once the shell process echoes the output, it's read by <code>Communication.receiveDataFromSSH()</code> and fed to pyte's <code>Stream</code> object via <code>feed()</code> in <code>SSHLib.read()</code>.</li>
+  <li><strong>pyte to GUI:</strong> The <code>Stream</code> object updates the <code>Screen</code> object, which the <code>SSHTerminalWidget.paintEvent()</code> method uses to draw on the GUI, completing the round trip.</li>
+</ol>
 
-```python
-def paintEvent(self, event):
-    painter = QPainter(self)
-    # Logic to paint each cell of buffer_grid
-```
-
-##### Calculating Cell Position
-- Cell width and height are calculated based on widget dimensions and grid size.
-  
-```python
-cell_width = self.width() // num_columns
-cell_height = self.height() // num_rows
-```
-
-- To draw a cell at `(row, col)`:
-
-```python
-x_position = col * cell_width
-y_position = row * cell_height
-```
-
-##### Text and Attributes
-- To draw text:
-
-```python
-painter.setPen(QColor(fg_color))
-painter.drawText(x_position, y_position, char)
-```
-
-- To apply attributes like bold or underline:
-
-```python
-font = painter.font()
-font.setBold(True if "bold" in attributes else False)
-painter.setFont(font)
-```
-
-#### Cursor Handling
-
-##### Cursor Position
-- Stored as `(cursor_x, cursor_y)` in the 2D buffer_grid.
-
-##### Rendering the Cursor
-- Change the background color of the cell `(cursor_x, cursor_y)` during `paintEvent`.
-
-```python
-if (row, col) == (cursor_x, cursor_y):
-    painter.fillRect(x_position, y_position, cell_width, cell_height, QColor(cursor_bg_color))
-```
-
-##### Cursor Movement Calculations
-- Moving the cursor involves changing `(cursor_x, cursor_y)` and constraining it within the grid dimensions.
-
-```python
-# Move cursor down
-cursor_x = min(cursor_x + 1, num_rows - 1)
-
-# Move cursor up
-cursor_x = max(cursor_x - 1, 0)
-```
-
-##### Cursor Blinking
-- A `QTimer` toggles a boolean flag, which is then checked during each `paintEvent`.
-
-```python
-self.cursor_visible = not self.cursor_visible
-self.update()  # Trigger a repaint
-```
-
----
-
-This should offer a detailed explanation of how screen rendering and cursor handling work in the SSHTerminal. Feel free to add code snippets or expand on these points to suit your implementation.
+</body>
+</html>

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QTimer, QRect, Qt, QEvent
+from PyQt6.QtCore import QTimer, QRect, Qt, QEvent, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QWidget, QScrollBar, QHBoxLayout, \
     QSizePolicy, QMenu, QVBoxLayout, QLabel
 from PyQt6.QtGui import QPainter, QAction, QFont, QBrush, QColor, QPen, QFontMetrics, QPixmap
@@ -16,6 +16,7 @@ keymap = {
     Qt.Key.Key_Down: b'\x1b[B',
     Qt.Key.Key_Left: b'\x1b[D',
     Qt.Key.Key_Right: b'\x1b[C',
+    Qt.Key.Key_Tab: b'\t',
     Qt.Key.Key_PageUp: "~1".encode(),
     Qt.Key.Key_PageDown: "~2".encode(),
     Qt.Key.Key_Home: "~H".encode(),
@@ -36,8 +37,18 @@ keymap = {
 }
 align = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
 
-
+class AppEventFilter:
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Tab:
+                print("Tab key pressed, will send through SSH")
+                # Your logic to send the Tab character through SSH
+                return True  # event is handled
+        return False  # continue event propagation
 class SSHTerminalWidget(QWidget):
+
+    ssh_failed_upwards_signal = pyqtSignal(str)
+    # ssh_failed_signal = pyqtSignal(str)
     # ...
     colors = {
         'black': QColor(0x00, 0x00, 0x00),
@@ -51,13 +62,13 @@ class SSHTerminalWidget(QWidget):
         'white': QColor(0xff, 0xff, 0xff)
     }
 
-    def __init__(self, parent=None, host=None, user=None, password=None):
+    def __init__(self, parent=None, host=None, user=None, password=None, port=22):
         super(SSHTerminalWidget, self).__init__(parent)
         self.setCursor(Qt.CursorShape.IBeamCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.startTimer(100)
         self.parent=parent
-
+        self.host = host
         self.font_name = "Consolas"  # Use a monospaced font: Monospace, Consolas
         self.font_p_size = 16
         self.font = self.new_font()
@@ -85,6 +96,7 @@ class SSHTerminalWidget(QWidget):
 
         # Instantiate the SSHLib here
         self.backend = SSHLib(self._columns, self._rows, host, user, password)
+        self.backend.ssh_failed_signal.connect(self.handle_ssh_failure)
 
         # Instantiate a QPixmap for painting
         self.pixmap = QPixmap(self.width(), self.height())
@@ -99,21 +111,41 @@ class SSHTerminalWidget(QWidget):
         # Install an event filter to capture mouse events
         self.installEventFilter(self)
 
+    def handle_ssh_failure(self, error_message):
+        self.ssh_failed_upwards_signal.emit(error_message)
+
     def eventFilter(self, obj, event):
-        if obj is self and event.type() == QEvent.Type.MouseButtonPress:
-            if event.buttons() & Qt.MouseButton.LeftButton:
-                self.selection_start = self._pixel2pos(event.pos().x(), event.pos().y())
-                self.selection_end = self.selection_start
-                self.update()
-        elif obj is self and event.type() == QEvent.Type.MouseMove:
-            if self.selection_start is not None:
-                self.selection_end = self._pixel2pos(event.pos().x(), event.pos().y())
-                self.update()
-        elif obj is self and event.type() == QEvent.Type.MouseButtonRelease:
-            if event.button() == Qt.MouseButton.LeftButton:
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Tab:
+                print("Tab key pressed, will send through SSH")
+                # Your logic to send the Tab character through SSH
+                try:
+                    self.send(b"\t")
+                except:
+                    print(f"tab proces failed")
+                return True  # event is handled
+
+        if event.type() == QEvent.Type.MouseButtonPress and event.buttons() & Qt.MouseButton.LeftButton:
+            print("[Mouse Press] X:", event.pos().x(), "Y:", event.pos().y())
+            self.selection_start = self._pixel2pos(event.pos().x(), event.pos().y())
+            self.selection_end = self.selection_start
+            print(f"Selection Start: {self.selection_start}, Selection End: {self.selection_end}")
+            self.update()
+
+        elif event.type() == QEvent.Type.MouseMove and self.selection_start:
+            self.selection_end = self._pixel2pos(event.pos().x(), event.pos().y())
+            print(f"Mouse moving: Updating Selection End to {self.selection_end}")
+            self.update()
+
+
+        elif event.type() == QEvent.Type.MouseButtonRelease:
+            if self.selection_start and self.selection_end:
+                print(
+                    f"Mouse Released: Final Selection Start: {self.selection_start}, Selection End: {self.selection_end}")
                 self.copy_selected_text_to_clipboard()
                 self.clear_selection()
                 self.update()
+
         return super().eventFilter(obj, event)
 
     def clear_selection(self):
@@ -154,61 +186,104 @@ class SSHTerminalWidget(QWidget):
         font.setPixelSize(self.font_p_size)
         return font
 
-
-
     def copy_selected_text_to_clipboard(self):
         try:
             clipboard = QApplication.clipboard()
-            if self.selection_start and self.selection_end:
-                start_col, start_row = self.selection_start
-                end_col, end_row = self.selection_end
+            start_col, start_row = self.selection_start
+            end_col, end_row = self.selection_end
+            if start_row > end_row or (start_row == end_row and start_col > end_col):
+                start_row, end_row = end_row, start_row
+                start_col, end_col = end_col, start_col
 
-                selected_text = ""
+            selected_text = ""
 
-                # Determine the order of rows (top to bottom or bottom to top)
-                if start_row < end_row:
-                    rows_range = range(start_row, end_row + 1)
-                else:
-                    rows_range = range(end_row, start_row + 1)
+            # Determine the order of rows (top to bottom or bottom to top)
+            if start_row < end_row:
+                rows_range = range(start_row, end_row + 1)
+            else:
+                rows_range = range(end_row, start_row + 1)
 
-                for row in rows_range:
-                    line = self.backend.screen.buffer.get(row)
-                    if line:
-                        line_text = ""
-                        for col in range(len(line)):
-                            char = line[col]
-                            # Check if character is within the selection range
-                            if (
-                                    (row == start_row and col >= start_col)
-                                    or (row == end_row and col <= end_col)
-                                    or (start_row < row < end_row)
-                            ):
-                                line_text += char.data
-                            else:
-                                line_text += " "  # Replace non-selected characters with spaces
-                        selected_text += line_text
-                        if row != end_row:
-                            selected_text += '\n'  # Add newline only if not the last line
+            for row in rows_range:
+                line = self.backend.screen.buffer.get(row)
+                if line:
+                    line_text = ""
 
-                clipboard.setText(selected_text)
-                self.selected_text = selected_text
-                print(selected_text)
+                    col_start = start_col if row == start_row else 0
+                    col_end = end_col if row == end_row else len(line) - 1
 
-                self.parent.show_message("copied selection...")
+                    for col in range(col_start, col_end + 1):
+                        char = line[col]
+                        line_text += char.data
+
+                    selected_text += line_text
+                    if row != end_row:
+                        selected_text += '\n'  # Add newline only if not the last line
+
+            clipboard.setText(selected_text)
+            self.selected_text = selected_text
+            print(selected_text)
 
         except Exception as e:
             print(e)
+
+    # def copy_selected_text_to_clipboard(self):
+    #     try:
+    #         print("got to copy_selected_text_to_clipboard")
+    #         clipboard = QApplication.clipboard()
+    #         if self.selection_start and self.selection_end:
+    #             start_col, start_row = self.selection_start
+    #             end_col, end_row = self.selection_end
+    #
+    #             selected_text = ""
+    #
+    #             # Determine the order of rows (top to bottom or bottom to top)
+    #             if start_row < end_row:
+    #                 rows_range = range(start_row, end_row + 1)
+    #             else:
+    #                 rows_range = range(end_row, start_row + 1)
+    #
+    #             for row in rows_range:
+    #                 line = self.backend.screen.buffer.get(row)
+    #                 if line:
+    #                     line_text = ""
+    #                     for col in range(len(line)):
+    #                         char = line[col]
+    #                         # Check if character is within the selection range
+    #                         if (
+    #                                 (row == start_row and col >= start_col)
+    #                                 or (row == end_row and col <= end_col)
+    #                                 or (start_row < row < end_row)
+    #                         ):
+    #                             line_text += char.data
+    #                         else:
+    #                             line_text += " "  # Replace non-selected characters with spaces
+    #                     selected_text += line_text
+    #                     if row != end_row:
+    #                         selected_text += '\n'  # Add newline only if not the last line
+    #
+    #             clipboard.setText(selected_text)
+    #             self.selected_text = selected_text
+    #             print(selected_text)
+    #
+    #             # self.show_message("copied selection...")
+    #
+    #     except Exception as e:
+    #         print(e)
 
     def _pixel2pos(self, x, y):
         # Pixel to coordinate conversion
         col = int(x / self._char_width)
         row = int(y / self._char_height)
+        print(f"Pixel ({x}, {y}) -> Position ({col}, {row})")
+
         return col, row
 
     def _pos2pixel(self, col, row):
         # Coordinate to pixel conversion
         x = col * self._char_width
         y = row * self._char_height
+        print(f"Pixel ({x}, {y}) -> Position ({col}, {row})")
+
         return x, y
 
     def resizeEvent(self, event):
@@ -327,39 +402,29 @@ class SSHTerminalWidget(QWidget):
         self.pain_cursor(painter)
 
     def paintEvent(self, event):
-        try:
-            painter = QPainter(self)
-            painter.drawPixmap(0, 0, self.pixmap)
-            tmp = len(self.backend.screen.history.top) + len(self.backend.screen.history.bottom)
-            self.scroll.setMaximum(tmp if tmp > 0 else 0)
-            self.scroll.setSliderPosition(len(self.backend.screen.history.top))
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self.pixmap)
 
-            # Draw selected text background character by character
-            if self.selection_start and self.selection_end:
-                # Set a transparent pen to avoid outlines
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QBrush(QColor(0x00, 0x00, 0xFF, 100)))  # Blue background for selection
-                start_x, start_y = self._pos2pixel(*self.selection_start)
-                end_x, end_y = self._pos2pixel(*self.selection_end)
+        if self.selection_start and self.selection_end:
+            # Set a transparent pen to avoid outlines
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(0x00, 0x00, 0xFF, 100)))  # Blue background for selection
 
-                beginning_line = start_y // self._char_height
-                beginning_position = start_x // self._char_width
+            start_col, start_row = self.selection_start
+            end_col, end_row = self.selection_end
 
-                ending_line = end_y // self._char_height
-                ending_position = end_x // self._char_width
+            # Ensure start is always before end
+            if start_row > end_row or (start_row == end_row and start_col > end_col):
+                start_col, start_row, end_col, end_row = end_col, end_row, start_col, start_row
 
-                # Iterate through rows and columns to highlight characters
-                for row in range(beginning_line, ending_line + 1):
-                    for col in range(self._columns):
-                        if (
-                                (row == beginning_line and col >= beginning_position) or
-                                (row == ending_line and col <= ending_position) or
-                                (beginning_line < row < ending_line)
-                        ):
-                            x, y = self._pos2pixel(col, row)
-                            painter.drawRect(x, y, self._char_width, self._char_height)
-        except:
-            traceback.print_exc()
+            # Iterate through rows and columns to highlight characters
+            for row in range(start_row, end_row + 1):
+                col_start = start_col if row == start_row else 0
+                col_end = end_col if row == end_row else self._columns - 1
+
+                for col in range(col_start, col_end + 1):
+                    x, y = self._pos2pixel(col, row)
+                    painter.drawRect(x, y, self._char_width, self._char_height)
 
     def send(self, data):
         self.backend.write(data)
@@ -371,7 +436,11 @@ class SSHTerminalWidget(QWidget):
                 text = str(event.text())
                 key = event.key()
                 native_modifiers = event.nativeModifiers()
-
+                if key == Qt.Key.Key_Tab:
+                    # Your logic to send the Tab character over SSH
+                    event.accept()
+                    self.send(b'\t')
+                    return
                 if text and key != Qt.Key.Key_Backspace:
                     self.send(text.encode("utf-8"))
                 else:
@@ -401,21 +470,24 @@ class SSHTerminalWidget(QWidget):
 
 
 class SSHTerminal(QWidget):
-    def __init__(self, host=None, user=None, password=None):
+    def __init__(self, host=None, user=None, password=None, port=22):
         super(SSHTerminal, self).__init__()
         self.resize(800, 600)
-
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.event_filter = AppEventFilter()  # Create an instance of your event filter class
+        self.installEventFilter(self.event_filter)
         # Create a QVBoxLayout for the main layout
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-
+        self.host = host
         # Create a QHBoxLayout for the terminal widget and scrollbar
         terminal_layout = QHBoxLayout()
         terminal_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.term = SSHTerminalWidget(self, host=host, user=user, password=password)
+        self.term = SSHTerminalWidget(self, host=host, user=user, password=password, port=port)
+        self.term.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.term.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
+        self.term.installEventFilter(self.event_filter)
         # Add the SSHTerminalWidget to the QHBoxLayout
         terminal_layout.addWidget(self.term)
 
@@ -464,13 +536,13 @@ class SSHTerminal(QWidget):
             self.term.close()
             # self.close()
 
-
-if __name__ == "__main__":
-    try:
-        app = QApplication(sys.argv)
-        win = SSHTerminal()
-        win.show()
-
-        sys.exit(app.exec())
-    except:
-        traceback.print_exc()
+#
+# if __name__ == "__main__":
+#     try:
+#         app = QApplication(sys.argv)
+#         win = SSHTerminal()
+#         win.show()
+#
+#         sys.exit(app.exec())
+#     except:
+#         traceback.print_exc()

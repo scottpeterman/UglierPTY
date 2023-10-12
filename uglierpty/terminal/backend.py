@@ -5,7 +5,7 @@ import select
 import time
 from pyte.screens import Screen, HistoryScreen
 from pyte.streams import ByteStream
-
+from PyQt6.QtCore import pyqtSignal, QObject
 # Custom Stream class inheriting from pyte's ByteStream
 class TermStream(ByteStream):
     def __init__(self, *args, **kwargs):
@@ -30,10 +30,7 @@ class Communication(object):
 
     # Shuts down the Communication and its backend
     def shutdown(self):
-        if self.backend:
-            self.backend.close()
-            self.backend = None
-            self.stop()
+        self.stop()
 
     # Stop the listener thread
     def stop(self):
@@ -92,14 +89,16 @@ class BaseBackend(object):
     def close(self):
         pass
 
-# Empty PtyBackend class inheriting from BaseBackend
-class PtyBackend(BaseBackend):
-    pass
+
 
 # SSHLib class handling SSH connections
-class SSHLib(BaseBackend):
+class SSHLib(BaseBackend, QObject):
+    ssh_failed_signal = pyqtSignal(str)  # Define the signal
+    # from PyQt6.QtCore import pyqtSignal
     def __init__(self, width, height, ip, username=None, password=None):
         super(SSHLib, self).__init__(width, height)
+        BaseBackend.__init__(self, width, height)
+        QObject.__init__(self)
         self.ip = ip
         self.username = username
         self.password = password
@@ -109,20 +108,44 @@ class SSHLib(BaseBackend):
         self.thread.start()
         self.listener = Communication()  # Create a listener object
 
+    def shutdown(self):
+        self.listener.stop_flag = True
+        self.listener.shutdown()
+
     # Connect to the SSH server
     def connect(self):
-        self.ssh_client = paramiko.SSHClient()
-        self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh_client.connect(self.ip, username=self.username, password=self.password)
-        self.channel = self.ssh_client.get_transport().open_session()
-        self.channel.get_pty(term='xterm', width=self.width, height=self.height)
-        self.channel.invoke_shell()
-        timeout = 60
-        while not self.channel.recv_ready() and timeout > 0:
-            time.sleep(1)
-            timeout -= 1
-        self.channel.resize_pty(width=self.width, height=self.height)
-        self.listener.set_backend(self)  # Set this backend as the listener's backend
+        try:
+            self.ssh_client = paramiko.SSHClient()
+            # self.ssh_client.load_system_host_keys()  # Load known host keys
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto-add unknown hosts
+            self.ssh_client.connect(self.ip, username=self.username, password=self.password, look_for_keys=False)
+            transport = self.ssh_client.get_transport()
+            transport.set_keepalive(60)  # Set keepalive
+
+            self.setup_shell()
+
+        except paramiko.AuthenticationException:
+            self.ssh_failed_signal.emit(f"Authentication failed for {self.ip}")
+        except paramiko.SSHException as e:
+            self.ssh_failed_signal.emit(f"SSH connection to {self.ip} failed: {str(e)}")
+        except Exception as e:
+            self.ssh_failed_signal.emit(f"An unknown error occurred: {str(e)}")
+
+    def setup_shell(self):
+        try:
+            self.channel = self.ssh_client.invoke_shell("xterm")
+            self.channel.set_combine_stderr(True)
+        except Exception:
+            # Fallback to a basic terminal session
+            self.channel = self.ssh_client.get_transport().open_session()
+            self.channel.get_pty(term='xterm', width=self.width, height=self.height)
+            self.channel.set_combine_stderr(True)
+
+        if self.channel:
+            while not self.channel.recv_ready():
+                time.sleep(1)
+            self.channel.resize_pty(width=self.width, height=self.height)
+            self.listener.set_backend(self)
 
     # Return the channel to read from
     def get_read_wait(self):
