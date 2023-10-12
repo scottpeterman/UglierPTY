@@ -33,7 +33,7 @@ If your interested in the PyQt6/XTerm.js version of this application take a look
 
 ## Screenshots
 
-Here are some snapshots of UglyPTY in action:
+Here are some snapshots of Uglier in action:
 
 <div align="center">
   <img src="https://github.com/scottpeterman/UglierPTY/raw/main/screen_shots/htop.png" alt="screen" width="400px">
