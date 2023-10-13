@@ -9,53 +9,7 @@ from uglierpty.session_manager.session_manager import SessionManager
 from uglierpty.terminal.widget import SSHTerminal, SSHTerminalWidget
 
 from uglierpty.ui.creds_widget import CredentialsManagerWidget as Ui_Creds
-welcome_html = '''
-<style>
-  body {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-  }
-
-  .container {
-    text-align: center;
-  }
-
-  h1 {
-    color: #FF9800;
-
-  }
-
-  p {
-    color: #607D8B;
-    text-align: left;
-  }
-
-  ul {
-    color: #4CAF50;
-    text-align: left;
-    list-style-position: inside;
-    padding-left: 0;
-  }
-
-  li {
-    color: #2196F3;
-  }
-</style>
-
-<body>
-  <div class="container">
-    <h1>UglierPTY&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</h1>
-    <p>
-      <b>UglierPTY</b> is a <span style="color: #FF9800;">PyQt6-based</span> an even uglier version of PuTTY that provides a user interface for interacting with terminals and managing sessions.
-    </p>
-    
-  </div>
-</body>
-
-'''
-
+from uglierpty.__init__ import welcome_page
 
 class MainWindow(QMainWindow):
     def closeEvent(self, event):
@@ -123,7 +77,7 @@ class MainWindow(QMainWindow):
         # StackWidget
         self.stack_widget = QStackedWidget()
         text_browser = QTextBrowser()
-        text_browser.setHtml(welcome_html)
+        text_browser.setHtml(welcome_page)
 
         tab_area = QWidget()
         tab_layout = QVBoxLayout()
